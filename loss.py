@@ -7,7 +7,11 @@ import sparseconvnet as scn
 
 
 class DiscriminativeLoss(torch.nn.Module):
-    
+    '''
+    Implementation of the Discriminative Loss Function in Pytorch
+    Note that there are many other implementation in Github, yet we decided to
+    implement from scratch for practice and to tailor to our purposes. 
+    '''
     def __init__(self, delta_var=0.5, delta_dist=1.5, norm=2, 
                  alpha=1.0, beta=1.0, gamma=0.001,
                  use_gpu=False, multiclass=False):
