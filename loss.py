@@ -10,7 +10,7 @@ class DiscriminativeLoss(torch.nn.Module):
     
     def __init__(self, delta_var=0.5, delta_dist=1.5, norm=2, 
                  alpha=1.0, beta=1.0, gamma=0.001,
-                 use_gpu=False):
+                 use_gpu=False, multiclass=False):
         super(DiscriminativeLoss, self).__init__()
         self.delta_var = delta_var
         self.delta_dist = delta_dist
@@ -19,6 +19,7 @@ class DiscriminativeLoss(torch.nn.Module):
         self.beta = beta
         self.gamma = gamma
         self.use_gpu = use_gpu
+        self.multiclass = multiclass
         
     def find_cluster_means(self, features, label):
         '''
@@ -45,7 +46,7 @@ class DiscriminativeLoss(torch.nn.Module):
         for i, c in enumerate(cluster_labels):
             index = (label == c).squeeze(1).nonzero()
             index = index.squeeze(1)
-            dists = torch.norm(features[index] - cluster_means[i], dim=1)
+            dists = torch.norm(features[index] - cluster_means[i], p=self.norm, dim=1)
             hinge = torch.clamp(dists-1, min=0)
             l = torch.mean(torch.pow(hinge, 2))
             var_loss += l
@@ -61,7 +62,7 @@ class DiscriminativeLoss(torch.nn.Module):
         for i, c1 in enumerate(cluster_means):
             for j, c2 in enumerate(cluster_means):
                 if i != j:
-                    dist = torch.norm(c1 - c2)
+                    dist = torch.norm(c1 - c2, p=self.norm)
                     hinge = torch.clamp(2.0 * margin - dist, min=0)
                     mean_loss += torch.pow(hinge, 2)
         if n_clusters > 1:
@@ -74,7 +75,7 @@ class DiscriminativeLoss(torch.nn.Module):
         n_clusters, feature_dim = cluster_means.shape
         for i in range(n_clusters):
             #print(torch.norm(cluster_means[i, :], norm))
-            reg += torch.norm(cluster_means[i, :], norm)
+            reg += torch.norm(cluster_means[i, :], p=norm)
         #print(reg)
         reg /= n_clusters
         #print(reg)
@@ -91,6 +92,17 @@ class DiscriminativeLoss(torch.nn.Module):
         
         return loss
     
-    def forward(self, x, y):
+    def forward(self, x, y, seg_labels=None):
         
-        return self.combine(x, y)
+        if self.multiclass:
+            loss = []
+            assert seg_labels is not None
+            semantic_classes = seg_labels.unique()
+            for sc in semantic_classes:
+                index = (seg_labels == sc).squeeze(1).nonzero()
+                index = index.squeeze(1)
+                x_c, y_c = x[index], y[index]
+                loss.append(self.combine(x_c, y_c))
+            return sum(loss)
+        else:
+            return self.combine(x,y)
