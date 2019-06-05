@@ -14,14 +14,12 @@ from osf.cluster_api import *
 from torch.utils.data import Dataset, DataLoader
 
 from sklearn.cluster import MeanShift
-from sklearn.metrics import adjusted_mutual_info_score 
+from sklearn.metrics import adjusted_mutual_info_score, adjusted_rand_score
 
 
 class ClusteringAEData(Dataset):
     """
-    A customized data loader for 3D 192px LArTPC clustering data.
-    Author: Dae Heun Koh
-    Modified from the Custom Dataset implementation in CS231N Pytorch Tutorial. 
+    A customized data loader for clustering.
     """
     def __init__(self, root, numPixels=192, filenames=None):
         """
@@ -52,15 +50,19 @@ class ClusteringAEData(Dataset):
         """
         Get a sample from dataset.
         """
-        voxel, label = self.cluster_reader.get_image(index)
-        _, energy, _ = self.energy_reader.get_image(index)
-        voxel, label = torch.from_numpy(voxel), torch.from_numpy(label)
+        voxel, ins_label = self.cluster_reader.get_image(index)
+        _, energy, seg_label = self.energy_reader.get_image(index)
+        voxel, ins_label = torch.from_numpy(voxel), torch.from_numpy(ins_label)
+        seg_label = torch.from_numpy(seg_label)
+        seg_label = torch.unsqueeze(seg_label, dim=1).type(torch.LongTensor)
         energy = torch.from_numpy(energy)
         energy = torch.unsqueeze(energy, dim=1)
-        label = torch.unsqueeze(label, dim=1).type(torch.LongTensor)
+        ins_label = torch.unsqueeze(ins_label, dim=1).type(torch.LongTensor)
         voxel = voxel.cuda()
         energy = energy.cuda()
-        return (voxel, energy), label
+        #with torch.no_grad():
+        #    out = unet((voxel, energy))
+        return (voxel, energy), ins_label, seg_label
 
     def __len__(self):
         """
@@ -77,7 +79,7 @@ def ae_collate(batch):
     target = [item[1] for item in batch]
     return [data, target]
 
-def compute_accuracy(embedding, truth):
+def compute_accuracy(embedding, truth, bandwidth=0.5):
     '''
     Compute Adjusted Rand index score (accuracy) for given embedding. 
     Inputs:
@@ -91,9 +93,9 @@ def compute_accuracy(embedding, truth):
     embed = np.atleast_1d(embed)
     th = np.atleast_1d(th)
     with torch.no_grad():
-        clustering = MeanShift(bandwidth=DELTA_V, bin_seeding=True, cluster_all=True).fit_predict(embed)
+        clustering = MeanShift(bandwidth=bandwidth, bin_seeding=True, cluster_all=True).fit_predict(embed)
         score = adjusted_rand_score(clustering, th)
-        return score
+        return score, clustering
     
 def compute_accuracy_with_segmentation(embedding, truth, seg_labels):
     '''
